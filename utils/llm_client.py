@@ -84,22 +84,34 @@ def chat_complete_json(
 
 
 def get_embedding(text: str, model: Optional[str] = None) -> List[float]:
-    """Returns a single embedding vector for the given text."""
+    """
+    Returns a single embedding vector for the given text.
+    Returns [] on any API failure (bad key, no credit, network issue, etc.)
+    rather than raising, so a single bad call doesn't crash a batch endpoint.
+    """
     if not text or not text.strip():
         return []
-    client = get_client()
-    response = client.embeddings.create(
-        model=model or settings.openai_embedding_model,
-        input=text[:8000],  # guard against oversized inputs
-    )
-    return response.data[0].embedding
+    try:
+        client = get_client()
+        response = client.embeddings.create(
+            model=model or settings.openai_embedding_model,
+            input=text[:8000],  # guard against oversized inputs
+        )
+        return response.data[0].embedding
+    except Exception as exc:  # noqa: BLE001
+        logger.error(f"get_embedding failed: {exc}")
+        return []
 
 
 def get_embeddings_batch(texts: List[str], model: Optional[str] = None) -> List[List[float]]:
-    """Batched embedding call — cheaper than one call per item."""
+    """Batched embedding call — cheaper than one call per item. Returns [] on failure rather than raising."""
     texts = [t[:8000] for t in texts if t and t.strip()]
     if not texts:
         return []
-    client = get_client()
-    response = client.embeddings.create(model=model or settings.openai_embedding_model, input=texts)
-    return [d.embedding for d in response.data]
+    try:
+        client = get_client()
+        response = client.embeddings.create(model=model or settings.openai_embedding_model, input=texts)
+        return [d.embedding for d in response.data]
+    except Exception as exc:  # noqa: BLE001
+        logger.error(f"get_embeddings_batch failed for {len(texts)} texts: {exc}")
+        return []

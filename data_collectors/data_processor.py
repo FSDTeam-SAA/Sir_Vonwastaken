@@ -26,7 +26,7 @@ from utils.logger import logger
 # Minimum engagement thresholds below which raw content is considered noise
 # and filtered out before it ever reaches the (expensive) AI layer.
 _MIN_ENGAGEMENT = {
-    "youtube": {"view_count": 500},
+    "youtube": {"views": 500},
     "reddit": {"score": 20},
     "google_trends": {},  # trend keywords have no engagement field of their own
 }

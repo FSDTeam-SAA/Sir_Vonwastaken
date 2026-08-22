@@ -38,20 +38,31 @@ def embed_pending_content(limit: int = 200) -> int:
     doesn't have a stored vector yet (tracked via an `embedded` flag on
     the processed_content doc itself, to avoid re-scanning the vector
     store on every call).
+
+    Only marks a document as `embedded` when a real vector was produced.
+    If the OpenAI call fails (bad API key, no credit, network issue), the
+    document is left unflagged so it's automatically retried on the next
+    call instead of being silently skipped forever.
     """
     docs = find("processed_content", {"embedded": {"$ne": True}}, limit=limit)
     count = 0
+    failures = 0
     for doc in docs:
         text = doc.get("text_for_ai") or doc.get("title", "")
         if not text.strip():
             continue
-        embed_content_item(
+        vector = embed_content_item(
             doc["external_id"],
             text,
             metadata={"platform": doc.get("platform"), "title": doc.get("title"), "channel_id": doc.get("channel_id")},
         )
-        get_collection("processed_content").update_one({"_id": doc["_id"]}, {"$set": {"embedded": True}})
-        count += 1
+        if vector:
+            get_collection("processed_content").update_one({"_id": doc["_id"]}, {"$set": {"embedded": True}})
+            count += 1
+        else:
+            failures += 1
 
+    if failures:
+        logger.warning(f"{failures} items failed to embed (left unflagged for retry) — check OPENAI_API_KEY.")
     logger.info(f"Embedded {count} pending processed_content items.")
     return count

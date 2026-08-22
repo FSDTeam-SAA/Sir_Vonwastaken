@@ -20,7 +20,7 @@ def get_channel_id_from_handle(handle):
 
 
 # Example usage
-handles = ["@FreeHighQualityDocumentaries","@travpedia","@naturesmomentstv","@bbcearth","@FreeDocumentaryNature","@NewTravelInsight","@World.TourYT","@UltimateNatureDocs","@DiscoverWildlifeEN"]
+handles = ["@playboicarti","@trippieredd5093","@kencarson","@mariojudah5081","@theslumpgod","@Cochise","@jasiah","@NLECHOPPA"]
 channel_ids = []
 
 for h in handles:
