@@ -107,11 +107,16 @@ class Settings:
     notify_discord_enabled: bool = field(default_factory=lambda: _get_bool("NOTIFY_DISCORD_ENABLED", False))
     notify_telegram_enabled: bool = field(default_factory=lambda: _get_bool("NOTIFY_TELEGRAM_ENABLED", False))
     notify_email_enabled: bool = field(default_factory=lambda: _get_bool("NOTIFY_EMAIL_ENABLED", False))
+    notify_slack_enabled: bool = field(default_factory=lambda: _get_bool("NOTIFY_SLACK_ENABLED", False))
 
     discord_webhook_url: str = os.getenv("DISCORD_WEBHOOK_URL", "")
 
     telegram_bot_token: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
     telegram_chat_id: str = os.getenv("TELEGRAM_CHAT_ID", "")
+
+    slack_webhook_url: str = os.getenv("SLACK_WEBHOOK_URL", "")
+    slack_bot_token: str = os.getenv("SLACK_BOT_TOKEN", "")
+    slack_channel: str = os.getenv("SLACK_CHANNEL", "#alerts")
 
     smtp_host: str = os.getenv("SMTP_HOST", "")
     smtp_port: int = field(default_factory=lambda: _get_int("SMTP_PORT", 587))
@@ -128,6 +133,16 @@ class Settings:
     trend_weight_freshness: float = field(default_factory=lambda: _get_float("TREND_WEIGHT_FRESHNESS", 0.15))
     trend_weight_similarity: float = field(default_factory=lambda: _get_float("TREND_WEIGHT_SIMILARITY", 0.3))
     trend_weight_cross_platform: float = field(default_factory=lambda: _get_float("TREND_WEIGHT_CROSS_PLATFORM", 0.1))
+
+    # ---------------------------------------------------------------
+    # Embedding generation (local vs API)
+    # ---------------------------------------------------------------
+    use_local_embeddings: bool = field(default_factory=lambda: _get_bool("USE_LOCAL_EMBEDDINGS", True))
+
+    # ---------------------------------------------------------------
+    # Background scheduler
+    # ---------------------------------------------------------------
+    scheduler_enabled: bool = field(default_factory=lambda: _get_bool("SCHEDULER_ENABLED", True))
 
 
 settings = Settings()

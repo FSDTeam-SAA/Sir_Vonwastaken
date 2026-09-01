@@ -60,8 +60,26 @@ pandas
 # ===========================
 discord-webhook
 python-telegram-bot
+slack-sdk
 
 # ===========================
-# Embeddings
+# Embeddings & Vector Search
 # ===========================
 numpy
+sentence-transformers
+chromadb
+
+# ===========================
+# Background Processing & Scheduling
+# ===========================
+APScheduler
+
+# ===========================
+# Logging & Monitoring
+# ===========================
+loguru
+
+# ===========================
+# Desktop Notifications (Windows)
+# ===========================
+pywin32

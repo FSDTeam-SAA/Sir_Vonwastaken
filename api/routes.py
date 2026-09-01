@@ -38,7 +38,14 @@ from email_assistant.detect_sponsorship import get_sponsorship_emails, scan_inbo
 from email_assistant.draft_replies import create_draft_reply
 from email_assistant.summarize_email import summarize_and_store
 from email_assistant.wait_for_approval import approve_draft, get_pending_drafts, reject_draft
-from notification_system import desktop_notifications, discord, email as email_notify, telegram
+from feedback_system.feedback_manager import (
+    get_feedback_history,
+    get_feedback_summary,
+    get_personalized_weights,
+    record_feedback,
+    update_recommendation_weights,
+)
+from notification_system import desktop_notifications, discord, email as email_notify, slack, telegram
 from trend_ranking.ranking_engine import get_top_trends, rank_trends
 from utils.logger import logger
 
@@ -351,6 +358,7 @@ def notify_test(payload: NotifyTestRequest):
         "discord": lambda: discord.send(payload.title, payload.message),
         "telegram": lambda: telegram.send(f"{payload.title}\n{payload.message}"),
         "email": lambda: email_notify.send(payload.title, payload.message),
+        "slack": lambda: slack.send(payload.title, payload.message),
     }
     for channel in payload.channels:
         fn = dispatch.get(channel)
@@ -359,6 +367,63 @@ def notify_test(payload: NotifyTestRequest):
             continue
         results[channel] = fn()
     return results
+
+
+# ---------------------------------------------------------------------------
+# Module 6 — User Feedback & Learning System
+# ---------------------------------------------------------------------------
+
+class FeedbackRequest(BaseModel):
+    action: str  # "accept", "reject", or "ignore"
+    notes: str = ""
+
+
+@router.post("/feedback/trends/{trend_id}")
+def feedback_record(trend_id: str, creator_id: str, payload: FeedbackRequest):
+    """Record user feedback on a trend recommendation."""
+    try:
+        feedback = record_feedback(trend_id, creator_id, payload.action, payload.notes)
+        return {"status": "recorded", "feedback": feedback}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Feedback recording failed")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get("/feedback/history/{creator_id}")
+def feedback_history(creator_id: str, trend_id: Optional[str] = None, limit: int = Query(50, le=200)):
+    """Get feedback history for a creator."""
+    history = get_feedback_history(trend_id=trend_id, creator_id=creator_id, limit=limit)
+    for doc in history:
+        doc["_id"] = str(doc["_id"])
+    return history
+
+
+@router.get("/feedback/summary/{creator_id}")
+def feedback_summary(creator_id: str, days: int = Query(30, ge=1, le=365)):
+    """Get summary of user feedback and trends over N days."""
+    return get_feedback_summary(creator_id, days=days)
+
+
+@router.post("/feedback/update-weights/{creator_id}")
+def feedback_update_weights(creator_id: str, alpha: float = Query(0.1, ge=0.01, le=1.0)):
+    """Update recommendation ranking weights based on user feedback."""
+    try:
+        new_weights = update_recommendation_weights(creator_id, alpha=alpha)
+        return {"status": "weights_updated", "new_weights": new_weights}
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Weight update failed")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get("/feedback/weights/{creator_id}")
+def feedback_weights(creator_id: str):
+    """Get current personalized recommendation weights for creator."""
+    weights = get_personalized_weights(creator_id)
+    if not weights:
+        return {"status": "using_default_weights"}
+    return {"status": "using_personalized_weights", "weights": weights}
 
 
 # ---------------------------------------------------------------------------

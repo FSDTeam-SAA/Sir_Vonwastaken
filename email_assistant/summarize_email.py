@@ -15,9 +15,9 @@ Stored back onto the email document in MongoDB so the dashboard (Module
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Dict
+from typing import Dict, List
 
-from database.mongodb import find_one, get_collection
+from database.mongodb import find, find_one, get_collection
 from utils.llm_client import chat_complete_json
 from utils.logger import logger
 
@@ -68,3 +68,36 @@ def summarize_and_store(email_external_id: str) -> Dict:
     )
     logger.info(f"Summarized email external_id={email_external_id} from brand='{summary.get('brand_name')}'.")
     return summary
+
+
+def summarize_pending_batch(limit: int = 50) -> List[Dict]:
+    """
+    Module 7 batch runner: summarizes every sponsorship email in MongoDB `emails`
+    that hasn't been summarized yet, extracting brand, offer details, deadline, budget.
+    
+    Returns list of summarized email documents.
+    """
+    docs = find(
+        "emails",
+        {
+            "sponsorship_classification.is_sponsorship": True,
+            "summary": {"$exists": False},
+        },
+        limit=limit,
+    )
+    summarized_emails: List[Dict] = []
+
+    for doc in docs:
+        try:
+            summary = summarize_email(doc.get("subject", ""), doc.get("body", ""))
+            get_collection("emails").update_one(
+                {"_id": doc["_id"]},
+                {"$set": {"summary": summary, "summarized_at": datetime.utcnow()}},
+            )
+            summarized_emails.append({**doc, "summary": summary})
+            logger.info(f"Summarized email {doc.get('external_id')} from brand='{summary.get('brand_name')}'.")
+        except Exception as exc:  # noqa: BLE001
+            logger.error(f"Failed to summarize email {doc.get('external_id')}: {exc}")
+
+    logger.info(f"Batch summarized {len(summarized_emails)} / {len(docs)} sponsorship emails.")
+    return summarized_emails
