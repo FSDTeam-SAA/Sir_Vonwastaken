@@ -66,6 +66,8 @@ def reject_draft(draft_id: str, reason: str = "") -> Dict:
     draft = get_draft(draft_id)
     if not draft:
         raise ValueError(f"No draft found with id={draft_id}.")
+    if draft["status"] != "pending_approval":
+        raise ValueError(f"Draft {draft_id} is not pending approval (status={draft['status']}).")
 
     get_collection("email_drafts").update_one(
         {"_id": draft["_id"]},

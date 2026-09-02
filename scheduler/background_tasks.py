@@ -17,6 +17,7 @@ from datetime import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from AI_analysis.content_analyzer import analyze_pending_batch
+from config.settings import settings
 from content_similarity_check.embedding_search import embed_pending_content
 from data_collectors import (
     data_processor,
@@ -115,13 +116,14 @@ def start_scheduler() -> None:
     
     # Embedding Generation Job
     scheduler.add_job(
-        lambda: embed_pending_content(limit=100, use_local=True),
+        embed_pending_content,
         "interval",
         hours=1,
         id="embed_content",
         name="Generate embeddings",
         misfire_grace_time=300,
         coalesce=True,
+        kwargs={"limit": 100},
     )
     
     # Trend Ranking & Notification Job (most frequent)
@@ -133,7 +135,7 @@ def start_scheduler() -> None:
         name="Rank trends and notify",
         misfire_grace_time=300,
         coalesce=True,
-        kwargs={"limit": 100},
+        kwargs={"limit": 100, "channel_id": settings.youtube_channel_id or None},
     )
     
     # Email Processing Jobs
@@ -169,7 +171,7 @@ def start_scheduler() -> None:
     )
     
     scheduler.start()
-    logger.info("Background scheduler started with 10 scheduled jobs")
+    logger.info(f"Background scheduler started with {len(scheduler.get_jobs())} scheduled jobs")
 
 
 def stop_scheduler() -> None:

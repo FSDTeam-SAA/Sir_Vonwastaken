@@ -76,10 +76,10 @@ def chat_complete_json(
         raw = response.choices[0].message.content or "{}"
         return json.loads(raw)
     except json.JSONDecodeError:
-        logger.error("chat_complete_json: model did not return valid JSON: %s", raw[:300])
+        logger.error("chat_complete_json: model did not return valid JSON: {}", raw[:300])
         return {}
     except Exception as exc:  # noqa: BLE001 — surface any API error, don't crash caller
-        logger.error("chat_complete_json failed: %s", exc)
+        logger.error("chat_complete_json failed: {}", exc)
         return {}
 
 

@@ -68,6 +68,8 @@ def create_draft_reply(email_external_id: str, creator_notes: str = "") -> Dict:
     reply_to = email_doc.get("from", "")
     subject = f"Re: {email_doc.get('subject', '')}"
     gmail_draft_id = create_draft(to=reply_to, subject=subject, body=reply_text, thread_id=email_doc.get("thread_id"))
+    if not gmail_draft_id:
+        raise RuntimeError("Gmail did not create the draft; no pending approval record was stored.")
 
     draft_doc = {
         "email_external_id": email_external_id,

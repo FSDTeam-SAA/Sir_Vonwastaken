@@ -9,10 +9,10 @@ Mounted in main.py under the "/api" prefix.
 """
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from AI_analysis.content_analyzer import analyze_pending_batch
 from AI_generator.generate_content import (
@@ -171,17 +171,25 @@ def get_profile(channel_id: str):
 # ---------------------------------------------------------------------------
 
 @router.post("/similarity/embed-pending")
-def embed_pending(limit: int = Query(200, le=1000)):
+def embed_pending(limit: int = Query(200, ge=1, le=1000), force: bool = Query(False)):
     try:
-        return {"embedded": embed_pending_content(limit=limit)}
+        return {"embedded": embed_pending_content(limit=limit, force=force)}
     except Exception as exc:  # noqa: BLE001
+        logger.exception("Pending-content embedding failed")
         raise HTTPException(status_code=500, detail=str(exc))
 
 
 @router.get("/similarity/{channel_id}/matches")
-def similarity_matches(channel_id: str, top_k: int = Query(20, le=100)):
-    results = find_content_similar_to_creator(channel_id, top_k=top_k)
-    return [{"content_id": ref_id, "score": score, "metadata": metadata} for ref_id, score, metadata in results]
+def similarity_matches(channel_id: str, top_k: int = Query(20, ge=1, le=100)):
+    try:
+        results = find_content_similar_to_creator(channel_id, top_k=top_k)
+        return [
+            {"content_id": ref_id, "score": score, "metadata": metadata}
+            for ref_id, score, metadata in results
+        ]
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Similarity matching failed for channel_id={}", channel_id)
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 # ---------------------------------------------------------------------------
@@ -219,7 +227,9 @@ def trends_list(channel_id: Optional[str] = None, limit: int = Query(20, le=200)
 # ---------------------------------------------------------------------------
 
 class RegenerateFieldRequest(BaseModel):
-    field: str
+    """Request one of the generator's supported, independently regenerable fields."""
+
+    field: Literal["titles", "hooks", "outline", "script", "thumbnails"]
     channel_id: Optional[str] = None
 
 
@@ -239,7 +249,7 @@ def content_regenerate(content_id: str, payload: RegenerateFieldRequest):
     try:
         return regenerate_field(content_id, payload.field, channel_id=payload.channel_id)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:  # noqa: BLE001
         logger.exception("Content regeneration failed")
         raise HTTPException(status_code=500, detail=str(exc))
@@ -347,7 +357,9 @@ def emails_draft_reject(draft_id: str, payload: RejectDraftRequest = RejectDraft
 class NotifyTestRequest(BaseModel):
     title: str = "Test notification"
     message: str = "This is a test notification from the Content Trend Intelligence Assistant."
-    channels: List[str] = ["desktop"]
+    channels: List[Literal["desktop", "discord", "telegram", "email", "slack"]] = Field(
+        default_factory=lambda: ["desktop"], min_length=1
+    )
 
 
 @router.post("/notify/test")
@@ -361,11 +373,7 @@ def notify_test(payload: NotifyTestRequest):
         "slack": lambda: slack.send(payload.title, payload.message),
     }
     for channel in payload.channels:
-        fn = dispatch.get(channel)
-        if not fn:
-            results[channel] = "unknown channel"
-            continue
-        results[channel] = fn()
+        results[channel] = dispatch[channel]()
     return results
 
 
@@ -374,7 +382,7 @@ def notify_test(payload: NotifyTestRequest):
 # ---------------------------------------------------------------------------
 
 class FeedbackRequest(BaseModel):
-    action: str  # "accept", "reject", or "ignore"
+    action: Literal["accept", "reject", "ignore"]
     notes: str = ""
 
 

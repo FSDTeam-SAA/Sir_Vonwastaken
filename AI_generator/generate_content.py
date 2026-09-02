@@ -142,6 +142,7 @@ def regenerate_field(content_id: str, field: str, channel_id: Optional[str] = No
 
     theme = doc.get("trend_title", "")
     chosen_title = (doc.get("titles") or [theme])[0]
+    channel_id = channel_id or doc.get("channel_id")
 
     if field == "titles":
         new_value = gen_titles(theme, channel_id=channel_id)

@@ -26,11 +26,56 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 from config.settings import settings
-from content_similarity_check.embedding_search import get_content_embedding
+from content_similarity_check.embedding_search import get_content_embedding_record
 from content_similarity_check.vector_search import score_content_against_creator
-from database.mongodb import find, get_collection, strip_ids, upsert
-from notification_system import desktop_notifications, discord, email as email_notify, telegram
+from database.mongodb import find, strip_ids, upsert
+from feedback_system.feedback_manager import get_personalized_weights
+from notification_system import (
+    desktop_notifications,
+    discord,
+    email as email_notify,
+    slack,
+    telegram,
+)
 from utils.logger import logger
+
+
+def _default_weights() -> Dict[str, float]:
+    return {
+        "growth": settings.trend_weight_growth,
+        "engagement": settings.trend_weight_engagement,
+        "freshness": settings.trend_weight_freshness,
+        "similarity": settings.trend_weight_similarity,
+        "cross_platform": settings.trend_weight_cross_platform,
+    }
+
+
+def _ranking_weights(channel_id: Optional[str]) -> Dict[str, float]:
+    """Merge valid creator-specific weights over configured defaults."""
+    weights = _default_weights()
+    if not channel_id:
+        return weights
+
+    personalized = get_personalized_weights(channel_id)
+    if not isinstance(personalized, dict):
+        return weights
+    for name in weights:
+        value = personalized.get(name)
+        if (
+            isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and math.isfinite(value)
+            and value >= 0
+        ):
+            weights[name] = float(value)
+        elif value is not None:
+            logger.warning(
+                "Ignoring invalid personalized '{}' weight for creator {}: {}",
+                name,
+                channel_id,
+                value,
+            )
+    return weights
 
 
 def _parse_dt(value: str) -> Optional[datetime]:
@@ -118,26 +163,39 @@ def cross_platform_score(doc: Dict, all_docs: List[Dict]) -> float:
 def similarity_to_creator_score(doc: Dict, channel_id: Optional[str]) -> float:
     if not channel_id:
         return 0.0
-    content_embedding = get_content_embedding(doc["external_id"])
-    if not content_embedding:
+    content_record = get_content_embedding_record(doc["external_id"])
+    if not content_record:
         return 0.0
-    raw_score = score_content_against_creator(content_embedding, channel_id)
+    content_embedding, metadata = content_record
+    raw_score = score_content_against_creator(
+        content_embedding,
+        channel_id,
+        content_metadata=metadata,
+    )
+    if raw_score is None:
+        return 0.0
     return max(min((raw_score + 1) / 2, 1.0), 0.0)  # cosine [-1,1] -> [0,1]
 
 
-def score_trend(doc: Dict, channel_id: Optional[str], all_docs: List[Dict]) -> Dict:
+def score_trend(
+    doc: Dict,
+    channel_id: Optional[str],
+    all_docs: List[Dict],
+    weights: Optional[Dict[str, float]] = None,
+) -> Dict:
     growth = growth_velocity_score(doc)
     engagement = engagement_rate_score(doc)
     freshness = freshness_score(doc.get("published_at", ""))
     similarity = similarity_to_creator_score(doc, channel_id)
     cross_platform = cross_platform_score(doc, all_docs)
 
+    resolved_weights = weights or _default_weights()
     final_score = (
-        growth * settings.trend_weight_growth
-        + engagement * settings.trend_weight_engagement
-        + freshness * settings.trend_weight_freshness
-        + similarity * settings.trend_weight_similarity
-        + cross_platform * settings.trend_weight_cross_platform
+        growth * resolved_weights["growth"]
+        + engagement * resolved_weights["engagement"]
+        + freshness * resolved_weights["freshness"]
+        + similarity * resolved_weights["similarity"]
+        + cross_platform * resolved_weights["cross_platform"]
     )
 
     return {
@@ -163,15 +221,20 @@ def rank_trends(channel_id: Optional[str] = None, limit: int = 300) -> List[Dict
         logger.warning("rank_trends: no processed_content available. Run collection + processing first.")
         return []
 
+    weights = _ranking_weights(channel_id)
     ranked: List[Dict] = []
     for doc in all_docs:
-        scoring = score_trend(doc, channel_id, all_docs)
+        scoring = score_trend(doc, channel_id, all_docs, weights=weights)
         candidate = {
             "content_id": doc["external_id"],
             "channel_id": channel_id,
             "platform": doc["platform"],
             "title": doc.get("title", ""),
             "url": doc.get("url", ""),
+            # Preserve the classifier output so feedback analytics can explain
+            # which categories a creator accepts or rejects without another
+            # collection lookup.
+            "analysis": doc.get("analysis", {}),
             "score": scoring["score"],
             "breakdown": scoring["breakdown"],
             "ranked_at": datetime.utcnow(),
@@ -200,6 +263,8 @@ def _notify_high_value_trend(candidate: Dict) -> None:
         telegram.send(f"{title}\n{message}")
     if settings.notify_email_enabled:
         email_notify.send(title, message)
+    if settings.notify_slack_enabled:
+        slack.send(title, message)
 
 
 def get_top_trends(channel_id: Optional[str] = None, limit: int = 20) -> List[Dict]:
