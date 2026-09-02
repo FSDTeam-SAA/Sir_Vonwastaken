@@ -47,7 +47,7 @@ Built with **FastAPI**, **MongoDB**, and **OpenAI** (chat + embeddings).
 ├── data_collectors/
 │   ├── youtube_collector.py       # YouTube Data API v3
 │   ├── reddit_collector.py        # Reddit via PRAW
-│   ├── google_trends_collector.py # Google Trends via pytrends
+│   ├── google_trends_collector.py # Trending Now RSS + pytrends keyword analytics
 │   ├── gmail_collector.py         # Gmail API (OAuth2)
 │   └── data_processor.py          # Dedup / filter / normalize raw content
 ├── creator_profile/
@@ -224,7 +224,7 @@ curl -X POST "http://localhost:8000/api/emails/drafts/DRAFT_ID/reject"
 | POST | `/api/collect/youtube` | Collect trending + watched YouTube content |
 | POST | `/api/collect/youtube/search` | Ad-hoc YouTube search |
 | POST | `/api/collect/reddit` | Collect from configured subreddits |
-| POST | `/api/collect/google-trends` | Collect trending searches + interest data |
+| POST | `/api/collect/google-trends` | Collect Trending Now searches, keyword interest, and related queries |
 | POST | `/api/collect/gmail/sync` | Sync recent Gmail messages |
 | POST | `/api/collect/all` | Run all collectors (YouTube, Reddit, Trends) |
 | POST | `/api/process/run` | Normalize/dedupe/filter raw content |
@@ -252,6 +252,11 @@ curl -X POST "http://localhost:8000/api/emails/drafts/DRAFT_ID/reject"
 | POST | `/api/feedback/update-weights/{creator_id}` | Update the creator's ranking weights from feedback |
 | GET | `/api/feedback/weights/{creator_id}` | Get stored personalized ranking weights |
 | GET | `/api/dashboard/{channel_id}` | Aggregated dashboard snapshot |
+
+The Google Trends response includes separate requested/tracked counts plus an
+`errors` list. A successful HTTP 200 with `status: "partial"` means the public
+Trending Now feed or some unofficial pytrends keyword requests were unavailable;
+the successful records were still stored and can be retried on the next run.
 
 Full request/response schemas are available at `/docs` (Swagger UI) once the app is running.
 

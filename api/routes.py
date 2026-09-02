@@ -65,6 +65,17 @@ def health_check():
 # Module 1 — Data Collection
 # ---------------------------------------------------------------------------
 
+class GoogleTrendsCollectionResponse(BaseModel):
+    """Outcome of a Google Trends run, including recoverable partial failures."""
+
+    status: Literal["ok", "partial"]
+    trending_searches: int
+    keywords_requested: int
+    keywords_tracked: int
+    related_queries_tracked: int
+    errors: List[str] = Field(default_factory=list)
+
+
 @router.post("/collect/youtube")
 def collect_youtube():
     try:
@@ -91,10 +102,15 @@ def collect_reddit():
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-@router.post("/collect/google-trends")
-def collect_google_trends():
+@router.post(
+    "/collect/google-trends",
+    response_model=GoogleTrendsCollectionResponse,
+)
+def collect_google_trends() -> GoogleTrendsCollectionResponse:
     try:
-        return google_trends_collector.run_full_collection()
+        return GoogleTrendsCollectionResponse(
+            **google_trends_collector.run_full_collection()
+        )
     except Exception as exc:  # noqa: BLE001
         logger.exception("Google Trends collection failed")
         raise HTTPException(status_code=500, detail=str(exc))

@@ -74,6 +74,12 @@ def _normalize_reddit(doc: Dict) -> Dict:
 
 def _normalize_google_trends(doc: Dict) -> Dict:
     keyword = doc.get("keyword", "")
+    published_at = doc.get("published_at", "")
+    if isinstance(published_at, datetime):
+        published_at = published_at.isoformat()
+    if not published_at and isinstance(doc.get("collected_at"), datetime):
+        published_at = doc["collected_at"].isoformat()
+
     return {
         "platform": "google_trends",
         "external_id": doc["external_id"],
@@ -82,11 +88,24 @@ def _normalize_google_trends(doc: Dict) -> Dict:
         "channel_id": "",
         "author": "",
         "url": f"https://trends.google.com/trends/explore?q={keyword.replace(' ', '+')}",
-        "published_at": doc.get("collected_at", datetime.utcnow()).isoformat() if isinstance(doc.get("collected_at"), datetime) else "",
+        "published_at": published_at,
         "tags": [],
         "engagement": {"rank": doc.get("rank", 999)},
         "source": "google_trends",
     }
+
+
+def _is_google_trends_content(doc: Dict) -> bool:
+    """Keep analytics records out of the downstream content pipeline.
+
+    Older trending-search records predate ``record_kind`` but can still be
+    identified by their rank. Interest and related-query documents are inputs
+    for scoring/ideas, not standalone content recommendations.
+    """
+    record_kind = doc.get("record_kind")
+    if record_kind is not None:
+        return record_kind == "trending_search"
+    return "rank" in doc and "series" not in doc and "top" not in doc
 
 
 _NORMALIZERS = {
@@ -117,6 +136,13 @@ def process_platform(platform: str, batch_size: int = 500) -> Dict[str, int]:
     stats = {"seen": len(raw_docs), "filtered_out": 0, "processed": 0}
 
     for raw in raw_docs:
+        if platform == "google_trends" and not _is_google_trends_content(raw):
+            stats["filtered_out"] += 1
+            get_collection("raw_content").update_one(
+                {"_id": raw["_id"]}, {"$set": {"processed": True}}
+            )
+            continue
+
         normalized = normalizer(raw)
         if not _passes_filter(platform, normalized["engagement"]):
             stats["filtered_out"] += 1
