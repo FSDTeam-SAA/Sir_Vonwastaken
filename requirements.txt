@@ -82,4 +82,4 @@ loguru
 # ===========================
 # Desktop Notifications (Windows)
 # ===========================
-pywin32
+#pywin32

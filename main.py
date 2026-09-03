@@ -10,6 +10,8 @@ Interactive API docs are then available at http://localhost:8000/docs
 """
 from __future__ import annotations
 
+import utils.transport
+import utils.session
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
